@@ -55,6 +55,7 @@ echo $SUDO_USER
 # Create the "inside" network interface.  This shell is already running as
 # root, so no need for sudo.
 ip tuntap add dev tun-tfh-inside mode tun user $SUDO_USER
+ip link set dev tun-tfh-inside up
 ip addr add dev tun-tfh-inside 192.168.84.2/24
 
 # Drop privileges
@@ -73,6 +74,7 @@ ls -l tun   # should show the socket, mode srwx------
 
 ```sh
 sudo ip tuntap add dev tun-tfh-outside mode tun user $USER
+sudo ip link set dev tun-tfh-outside up
 sudo ip addr add dev tun-tfh-outside 192.168.84.1/24
 
 # Run the tunnel.  This will relay traffic between the inside and outside
