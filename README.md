@@ -57,6 +57,7 @@ echo $SUDO_USER
 ip tuntap add dev tun-tfh-inside mode tun user $SUDO_USER
 ip link set dev tun-tfh-inside up
 ip addr add dev tun-tfh-inside 192.168.84.2/24
+ip route add default via 192.168.84.1
 
 # Drop privileges
 exec su - $SUDO_USER
