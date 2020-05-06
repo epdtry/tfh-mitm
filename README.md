@@ -20,21 +20,21 @@ before you start messing with the network and routing configuration.
 
 In a normal X session:
 
- 1. Install Steam under Wine.
- 2. Run Steam and log in.  You don't need to install TFH or any other games.
- 3. Follow the normal lobby server installation instructions.  When running
+ 1. Follow the normal lobby server installation instructions.  When running
     `steamcmd`, use `wineconsole steamcmd.exe` instead of normal `wine`.
- 4. To run the server, use this command:
+ 2. To run the server, use this command:
     ```sh
     wineconsole .wine/drive_c/tfhlobby/LobbyExe.exe -f config/Lobby_server.geoproj -i
     ```
     (Note this assumes you used `c:\tfhlobby` as the `force_install_dir` for
     `steamcmd`.)  You can also find the right arguments by reading the .bat
     file the normal instructions tell you to run.
- 5. Connect to the server and make sure it works.  If it doesn't show up in the
+ 3. Connect to the server and make sure it works.  If it doesn't show up in the
     server list, you may need to forward UDP port 27016 and/or open that port
     in your firewall.  If running inside a VM, you may need to enable port
     forwarding in your VM manager or switch to bridged networking.
+
+Note that installing Steam is no longer required to run the lobby server.
 
 
 ## Create the sandbox
