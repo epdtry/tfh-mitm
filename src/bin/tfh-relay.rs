@@ -107,11 +107,11 @@ fn real_main() -> Result<(), Error> {
     for inp in recv.iter() {
         match inp {
             Input::FromA(p) => {
-                println!("A -> B: {} bytes", p.len());
+                println!("A -> B: {} bytes: {}", p.len(), p.kernel());
                 write_packet(fd_b, p)?;
             },
             Input::FromB(p) => {
-                println!("B -> A: {} bytes", p.len());
+                println!("B -> A: {} bytes: {}", p.len(), p.kernel());
                 write_packet(fd_a, p)?;
             },
         }
