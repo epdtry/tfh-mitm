@@ -4,6 +4,7 @@ use std::io;
 use nix;
 
 
+pub mod packet;
 pub mod tuntap;
 
 
