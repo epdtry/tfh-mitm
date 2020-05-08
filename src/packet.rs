@@ -1,7 +1,7 @@
 use std::convert::TryInto;
 use std::fmt;
 use std::mem::{self, MaybeUninit};
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 use std::slice;
 use crate::bytes::Bytes;
 
@@ -50,6 +50,38 @@ impl PacketInner {
 #[derive(Default)]
 pub struct Packet(Box<PacketInner>);
 
+macro_rules! define_header_accessors {
+    ($Header:ty,
+            $header:ident, $header_mut:ident,
+            $header_payload:ident, $header_payload_mut:ident,
+            $header_start:ident, $header_len:ident, $header_end:ident) => {
+        // $header_start and $header_len should already be defined.  The rest will be provided.
+        pub fn $header(&self) -> &$Header {
+            let range = self.$header_start() .. self.$header_end();
+            <$Header>::new(&self[range])
+        }
+
+        pub fn $header_mut(&mut self) -> &mut $Header {
+            let range = self.$header_start() .. self.$header_end();
+            <$Header>::new_mut(&mut self[range])
+        }
+
+        pub fn $header_payload(&self) -> &[u8] {
+            let range = self.$header_end() ..;
+            &self[range]
+        }
+
+        pub fn $header_payload_mut(&mut self) -> &mut [u8] {
+            let range = self.$header_end() ..;
+            &mut self[range]
+        }
+
+        pub fn $header_end(&self) -> usize {
+            self.$header_start() + self.$header_len()
+        }
+    };
+}
+
 impl Packet {
     pub fn len(&self) -> usize {
         self.0.len()
@@ -84,13 +116,11 @@ impl Packet {
         4
     }
 
-    pub fn kernel_end(&self) -> usize {
-        self.kernel_start() + self.kernel_len()
-    }
-
-    pub fn kernel(&self) -> KernelHeader {
-        KernelHeader(&self[self.kernel_start() .. self.kernel_end()])
-    }
+    define_header_accessors!(
+        KernelHeader,
+        kernel, kernel_mut, kernel_payload, kernel_payload_mut,
+        kernel_start, kernel_len, kernel_end
+    );
 
 
     pub fn ipv4_start(&self) -> usize {
@@ -98,16 +128,14 @@ impl Packet {
     }
 
     pub fn ipv4_len(&self) -> usize {
-        Ipv4Header(&self[self.ipv4_start() ..]).ihl() as usize * 4
+        Ipv4Header::new(&self[self.ipv4_start() ..]).ihl() as usize * 4
     }
 
-    pub fn ipv4_end(&self) -> usize {
-        self.ipv4_start() + self.ipv4_len()
-    }
-
-    pub fn ipv4(&self) -> Ipv4Header {
-        Ipv4Header(&self[self.ipv4_start() .. self.ipv4_end()])
-    }
+    define_header_accessors!(
+        Ipv4Header,
+        ipv4, ipv4_mut, ipv4_payload, ipv4_payload_mut,
+        ipv4_start, ipv4_len, ipv4_end
+    );
 
 
     pub fn udp_start(&self) -> usize {
@@ -124,13 +152,11 @@ impl Packet {
         8
     }
 
-    pub fn udp_end(&self) -> usize {
-        self.udp_start() + self.udp_len()
-    }
-
-    pub fn udp(&self) -> UdpHeader {
-        UdpHeader(&self[self.udp_start() .. self.udp_end()])
-    }
+    define_header_accessors!(
+        UdpHeader,
+        udp, udp_mut, udp_payload, udp_payload_mut,
+        udp_start, udp_len, udp_end
+    );
 }
 
 impl Deref for Packet {
@@ -138,15 +164,34 @@ impl Deref for Packet {
     fn deref(&self) -> &[u8] { self.as_slice() }
 }
 
+impl DerefMut for Packet {
+    fn deref_mut(&mut self) -> &mut [u8] { self.as_mut_slice() }
+}
+
 
 macro_rules! define_header {
     ($Header:ident) => {
-        #[derive(Clone, Copy, Debug)]
-        pub struct $Header<'a>(&'a [u8]);
+        #[derive(Debug)]
+        #[repr(transparent)]
+        pub struct $Header([u8]);
 
-        impl Deref for $Header<'_> {
+        impl $Header {
+            pub fn new<'a>(x: &'a [u8]) -> &'a $Header {
+                unsafe { mem::transmute(x) }
+            }
+
+            pub fn new_mut<'a>(x: &'a mut [u8]) -> &'a mut $Header {
+                unsafe { mem::transmute(x) }
+            }
+        }
+
+        impl Deref for $Header {
             type Target = [u8];
-            fn deref(&self) -> &[u8] { self.0 }
+            fn deref(&self) -> &[u8] { &self.0 }
+        }
+
+        impl DerefMut for $Header {
+            fn deref_mut(&mut self) -> &mut [u8] { &mut self.0 }
         }
     };
 }
@@ -154,20 +199,20 @@ macro_rules! define_header {
 
 define_header!(KernelHeader);
 
-impl KernelHeader<'_> {
-    pub fn flags(self) -> u16 { self.0.u16_be(0) }
-    pub fn proto(self) -> u16 { self.0.u16_be(2) }
+impl KernelHeader {
+    pub fn flags(&self) -> u16 { self.0.u16_be(0) }
+    pub fn proto(&self) -> u16 { self.0.u16_be(2) }
 
-    pub fn is_ipv4(self) -> bool {
+    pub fn is_ipv4(&self) -> bool {
         self.proto() == 0x0800
     }
 
-    pub fn is_ipv6(self) -> bool {
+    pub fn is_ipv6(&self) -> bool {
         self.proto() == 0x86dd
     }
 }
 
-impl fmt::Display for KernelHeader<'_> {
+impl fmt::Display for KernelHeader {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         write!(fmt, "K {:04x} {:04x}", self.flags(), self.proto())
     }
@@ -176,22 +221,22 @@ impl fmt::Display for KernelHeader<'_> {
 
 define_header!(Ipv4Header);
 
-impl Ipv4Header<'_> {
-    pub fn ihl(self) -> u8 { self.0.u8_be(0) & 0x0f }
-    pub fn total_len(self) -> u16 { self.0.u16_be(2) }
-    pub fn ident(self) -> u16 { self.0.u16_be(4) }
-    pub fn flags(self) -> u8 { self.0.u8_be(6) >> 5 }
-    pub fn offset(self) -> u16 { self.0.u16_be(6) & 0x1fff }
-    pub fn protocol(self) -> u8 { self.0.u8_be(9) }
-    pub fn source_ip(self) -> u32 { self.0.u32_be(12) }
-    pub fn dest_ip(self) -> u32 { self.0.u32_be(16) }
+impl Ipv4Header {
+    pub fn ihl(&self) -> u8 { self.0.u8_be(0) & 0x0f }
+    pub fn total_len(&self) -> u16 { self.0.u16_be(2) }
+    pub fn ident(&self) -> u16 { self.0.u16_be(4) }
+    pub fn flags(&self) -> u8 { self.0.u8_be(6) >> 5 }
+    pub fn offset(&self) -> u16 { self.0.u16_be(6) & 0x1fff }
+    pub fn protocol(&self) -> u8 { self.0.u8_be(9) }
+    pub fn source_ip(&self) -> u32 { self.0.u32_be(12) }
+    pub fn dest_ip(&self) -> u32 { self.0.u32_be(16) }
 
-    pub fn is_udp(self) -> bool {
+    pub fn is_udp(&self) -> bool {
         self.protocol() == 17
     }
 }
 
-impl fmt::Display for Ipv4Header<'_> {
+impl fmt::Display for Ipv4Header {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         write!(
            fmt,
@@ -212,13 +257,13 @@ impl fmt::Display for Ipv4Header<'_> {
 
 define_header!(UdpHeader);
 
-impl UdpHeader<'_> {
-    pub fn source_port(self) -> u16 { self.0.u16_be(0) }
-    pub fn dest_port(self) -> u16 { self.0.u16_be(2) }
-    pub fn len(self) -> u16 { self.0.u16_be(4) }
+impl UdpHeader {
+    pub fn source_port(&self) -> u16 { self.0.u16_be(0) }
+    pub fn dest_port(&self) -> u16 { self.0.u16_be(2) }
+    pub fn len(&self) -> u16 { self.0.u16_be(4) }
 }
 
-impl fmt::Display for UdpHeader<'_> {
+impl fmt::Display for UdpHeader {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         write!(
            fmt,
