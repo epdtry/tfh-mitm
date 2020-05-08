@@ -1,9 +1,10 @@
 use std::mem::MaybeUninit;
 use std::slice;
 
-/// Capacity in bytes of a Packet's data buffer.  The MTU of the tun device must not exceed this
-/// value; otherwise, data will be silently dropped.
-pub const PACKET_CAP: usize = 1500;
+/// Capacity in bytes of a Packet's data buffer, including the kernel-provided flags and protocol
+/// fields.  The MTU of the TUN device, plus 4 for the kernel header, must fit within `PACKET_CAP`;
+/// otherwise, data will be silently dropped.
+pub const PACKET_CAP: usize = 1500 + 4;
 
 struct PacketInner {
     data: MaybeUninit<[u8; PACKET_CAP]>,
