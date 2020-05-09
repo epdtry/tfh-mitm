@@ -67,6 +67,9 @@ fn edit_server_status(p: &mut Packet) -> Result<(), &'static str> {
     require!(i + 3 < b.len());
     println!("offset {}, players: {} / {}", i, b[i + 2], b[i + 3]);
     b[i + 2] = b[i + 3];
+    // Checksum is optional for UDP/IPv4 packets.  Clearing it is easier than computing the correct
+    // value.
+    p.udp_mut().set_checksum(0);
     Ok(())
 }
 

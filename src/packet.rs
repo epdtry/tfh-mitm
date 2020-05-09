@@ -257,6 +257,9 @@ impl UdpHeader {
     pub fn source_port(&self) -> u16 { self.0.u16_be(0) }
     pub fn dest_port(&self) -> u16 { self.0.u16_be(2) }
     pub fn len(&self) -> u16 { self.0.u16_be(4) }
+    pub fn checksum(&self) -> u16 { self.0.u16_be(6) }
+
+    pub fn set_checksum(&mut self, x: u16) { self.0.put_u16_be(6, x) }
 }
 
 impl fmt::Display for UdpHeader {
