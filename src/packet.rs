@@ -167,6 +167,12 @@ impl Packet {
         udp, udp_mut, udp_payload, udp_payload_mut,
         udp_start, udp_len, udp_end
     );
+
+
+    pub fn is_udp(&self) -> bool {
+        (self.is_ipv4() && self.ipv4().is_udp()) ||
+        (self.is_ipv6() && false)   // TODO ipv6
+    }
 }
 
 impl Deref for Packet {
