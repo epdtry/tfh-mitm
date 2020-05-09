@@ -173,6 +173,51 @@ impl Packet {
         (self.is_ipv4() && self.ipv4().is_udp()) ||
         (self.is_ipv6() && false)   // TODO ipv6
     }
+
+    pub fn compute_udp_checksum(&self, data: &[u8]) -> u16 {
+        fn ones_complement_add(x: u16, y: u16) -> u16 {
+            let (sum, over) = x.overflowing_add(y);
+            sum + over as u16
+        }
+
+        let mut acc = 0;
+
+        if self.is_ipv4() {
+            let mut pseudo_header = [0; 20];
+            pseudo_header.put_u32_be(0, self.ipv4().source_ip());
+            pseudo_header.put_u32_be(4, self.ipv4().dest_ip());
+            // 8: 0
+            pseudo_header.put_u8_be(9, self.ipv4().protocol());
+            // "UDP length" is the length of the data plus the 8-byte UDP header.
+            pseudo_header.put_u16_be(10, (data.len() + 8) as u16);
+            pseudo_header.put_u16_be(12, self.udp().source_port());
+            pseudo_header.put_u16_be(14, self.udp().dest_port());
+            pseudo_header.put_u16_be(16, self.udp().len());
+            // 18-19: 0
+            for i in (0 .. pseudo_header.len()).step_by(2) {
+                acc = ones_complement_add(acc, pseudo_header.u16_be(i));
+            }
+        } else if self.is_ipv6() {
+            unimplemented!("udp checksum of ipv6 packets");
+        } else {
+            panic!("don't know how to checksum non-UDP/IP packets");
+        }
+
+        for i in (0 .. data.len()).step_by(2) {
+            if i + 1 < data.len() {
+                acc = ones_complement_add(acc, data.u16_be(i));
+            } else {
+                // If data.len() is odd, there will be a lone byte at the end.
+                acc = ones_complement_add(acc, (data.u8_be(i) as u16) << 8);
+            }
+        }
+
+        if acc == 0xffff {
+            0xffff
+        } else {
+            !acc
+        }
+    }
 }
 
 impl Deref for Packet {

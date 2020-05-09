@@ -52,13 +52,14 @@ macro_rules! require {
 }
 
 fn edit_server_status(p: &mut Packet) -> Result<(), &'static str> {
+    require!(p.is_udp());
+
     // Protocol docs: https://developer.valvesoftware.com/wiki/Server_queries
     //
     // Starting at offset 6, there are four null-terminated strings.  The current and max player
     // count fields are after those.
-    let mut i = 6;
-    require!(p.is_udp());
     let b = p.udp_payload_mut();
+    let mut i = 6;
     for _ in 0..4 {
         while i < b.len() && b[i] != 0 {
             i += 1;
@@ -68,9 +69,12 @@ fn edit_server_status(p: &mut Packet) -> Result<(), &'static str> {
     require!(i + 3 < b.len());
     println!("offset {}, players: {} / {}", i, b[i + 2], b[i + 3]);
     b[i + 2] = b[i + 3];
-    // Checksum is optional for UDP/IPv4 packets.  Clearing it is easier than computing the correct
-    // value.
-    p.udp_mut().set_checksum(0);
+
+    // Checksums are optional in UDP/IPv4, so we could set it to zero (unused) instead.  But that
+    // has the inexplicable side effect of making player count appear to be zero, regardless of the
+    // value in the packet, and might cause other weird effects too.
+    let checksum = p.compute_udp_checksum(p.udp_payload());
+    p.udp_mut().set_checksum(checksum);
     Ok(())
 }
 
