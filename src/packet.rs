@@ -82,12 +82,29 @@ macro_rules! define_header_accessors {
 }
 
 impl Packet {
+    pub fn zeroed(len: usize) -> Packet {
+        let mut p = Self::default();
+        assert!(len <= PACKET_CAP);
+        unsafe {
+            for i in 0 .. len {
+                *p.as_mut_ptr().add(i) = 0;
+            }
+            p.set_len(len);
+        }
+        p
+    }
+
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
-    pub fn set_len(&mut self, len: usize) {
+    pub unsafe fn set_len(&mut self, len: usize) {
         self.0.len = len;
+    }
+
+    pub fn truncate(&mut self, len: usize) {
+        assert!(len <= self.len());
+        unsafe { self.set_len(len) };
     }
 
     pub fn as_slice(&self) -> &[u8] {
