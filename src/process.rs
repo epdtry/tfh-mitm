@@ -59,8 +59,7 @@ fn edit_server_status(p: &mut Packet) -> Result<(), &'static str> {
     require!(p.is_udp());
     let b = p.udp_payload_mut();
     for _ in 0..4 {
-        require!(i < b.len());
-        while b[i] != 0 {
+        while i < b.len() && b[i] != 0 {
             i += 1;
         }
         i += 1;
