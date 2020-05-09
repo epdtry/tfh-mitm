@@ -1,7 +1,7 @@
+use std;
 use std::os::unix::io::{RawFd, AsRawFd};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
-use std::process;
 use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
 use libc;
@@ -10,6 +10,7 @@ use nix::sys::socket::{ControlMessageOwned, MsgFlags};
 use nix::sys::uio::IoVec;
 use tfh_mitm::Error;
 use tfh_mitm::packet::{Packet, PACKET_CAP};
+use tfh_mitm::process::{self, Input, Output};
 use tfh_mitm::tuntap;
 
 
@@ -33,11 +34,6 @@ fn write_packet(fd: RawFd, p: Packet) -> Result<(), Error> {
     Ok(())
 }
 
-
-enum Input {
-    FromA(Packet),
-    FromB(Packet),
-}
 
 fn spawn_reader(
     fd: RawFd,
@@ -86,37 +82,30 @@ fn real_main() -> Result<(), Error> {
 
     println!("opened tun devices {}, {}", fd_a, fd_b);
 
-
-    let (send_a, recv) = mpsc::channel();
-    let send_b = send_a.clone();
+    let (inp_send, out_recv, _) = process::start_processing_thread();
+    let inp_send_a = inp_send.clone();
+    let inp_send_b = inp_send;
 
     spawn_reader(fd_a, move |r| {
         match r {
-            Ok(p) => { send_a.send(Input::FromA(p)).unwrap(); },
+            Ok(p) => { inp_send_a.send(Input::FromA(p)).unwrap(); },
             Err(e) => { eprintln!("error reading from side A: {}", e); },
         }
     });
 
     spawn_reader(fd_b, move |r| {
         match r {
-            Ok(p) => { send_b.send(Input::FromB(p)).unwrap(); },
+            Ok(p) => { inp_send_b.send(Input::FromB(p)).unwrap(); },
             Err(e) => { eprintln!("error reading from side B: {}", e); },
         }
     });
 
-    for inp in recv.iter() {
-        match inp {
-            Input::FromA(p) => {
-                println!("A -> B: {} bytes: {}", p.len(), p);
-                write_packet(fd_b, p)?;
-            },
-            Input::FromB(p) => {
-                println!("B -> A: {} bytes: {}", p.len(), p);
-                write_packet(fd_a, p)?;
-            },
+    for out in out_recv.iter() {
+        match out {
+            Output::ToA(p) => write_packet(fd_a, p)?,
+            Output::ToB(p) => write_packet(fd_b, p)?,
         }
     }
-
     Ok(())
 }
 
@@ -125,7 +114,7 @@ fn main() {
         Ok(()) => {},
         Err(e) => {
             println!("error: {}", e);
-            process::exit(1);
+            std::process::exit(1);
         },
     }
 }

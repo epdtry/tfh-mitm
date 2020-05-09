@@ -6,6 +6,7 @@ use nix;
 
 mod bytes;
 pub mod packet;
+pub mod process;
 pub mod tuntap;
 
 
