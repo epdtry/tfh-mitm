@@ -72,7 +72,7 @@ pub fn open_tun(if_name: &str) -> Result<RawFd, Error> {
     unsafe {
         let mut ifr = MaybeUninit::<ifreq>::zeroed();
         let ifrp = ifr.as_mut_ptr();
-        (*ifrp).ifr_ifru.ifru_flags = IFF_TUN as c_short;
+        (*ifrp).ifr_ifru.ifru_flags = (IFF_TUN | IFF_NO_PI) as c_short;
         for (i, &b) in if_name.as_bytes().iter().enumerate() {
             (*ifrp).ifr_ifrn.ifrn_name[i] = b as c_char;
         }

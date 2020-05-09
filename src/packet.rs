@@ -6,10 +6,9 @@ use std::slice;
 use crate::bytes::Bytes;
 
 
-/// Capacity in bytes of a Packet's data buffer, including the kernel-provided flags and protocol
-/// fields.  The MTU of the TUN device, plus 4 for the kernel header, must fit within `PACKET_CAP`;
-/// otherwise, data will be silently dropped.
-pub const PACKET_CAP: usize = 1500 + 4;
+/// Capacity in bytes of a Packet's data buffer.  The MTU of the tun device must not exceed this
+/// value; otherwise, data will be silently dropped.
+pub const PACKET_CAP: usize = 1500;
 
 struct PacketInner {
     data: MaybeUninit<[u8; PACKET_CAP]>,
@@ -108,23 +107,12 @@ impl Packet {
     }
 
 
-    pub fn kernel_start(&self) -> usize {
-        0
+    pub fn is_ipv4(&self) -> bool {
+        Ipv4Header::new(&self).version() == 4
     }
-
-    pub fn kernel_len(&self) -> usize {
-        4
-    }
-
-    define_header_accessors!(
-        KernelHeader,
-        kernel, kernel_mut, kernel_payload, kernel_payload_mut,
-        kernel_start, kernel_len, kernel_end
-    );
-
 
     pub fn ipv4_start(&self) -> usize {
-        self.kernel_end()
+        0
     }
 
     pub fn ipv4_len(&self) -> usize {
@@ -138,10 +126,15 @@ impl Packet {
     );
 
 
+    pub fn is_ipv6(&self) -> bool {
+        Ipv4Header::new(&self).version() == 6
+    }
+
+
     pub fn udp_start(&self) -> usize {
-        if self.kernel().is_ipv4() {
+        if self.is_ipv4() {
             self.ipv4_end()
-        } else if self.kernel().is_ipv6() {
+        } else if self.is_ipv6() {
             unimplemented!("udp6")
         } else {
             panic!("don't know how to find UDP header in non-IP packet")
@@ -197,31 +190,10 @@ macro_rules! define_header {
 }
 
 
-define_header!(KernelHeader);
-
-impl KernelHeader {
-    pub fn flags(&self) -> u16 { self.0.u16_be(0) }
-    pub fn proto(&self) -> u16 { self.0.u16_be(2) }
-
-    pub fn is_ipv4(&self) -> bool {
-        self.proto() == 0x0800
-    }
-
-    pub fn is_ipv6(&self) -> bool {
-        self.proto() == 0x86dd
-    }
-}
-
-impl fmt::Display for KernelHeader {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        write!(fmt, "K {:04x} {:04x}", self.flags(), self.proto())
-    }
-}
-
-
 define_header!(Ipv4Header);
 
 impl Ipv4Header {
+    pub fn version(&self) -> u8 { self.0.u8_be(0) >> 4 }
     pub fn ihl(&self) -> u8 { self.0.u8_be(0) & 0x0f }
     pub fn total_len(&self) -> u16 { self.0.u16_be(2) }
     pub fn ident(&self) -> u16 { self.0.u16_be(4) }
@@ -240,8 +212,9 @@ impl fmt::Display for Ipv4Header {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         write!(
            fmt,
-           "I {ihl:x} {total_len:04x} {ident:04x} {flags:x} {offset:04x} \
+           "I {version:x} {ihl:x} {total_len:04x} {ident:04x} {flags:x} {offset:04x} \
                {protocol:02x} {source_ip:08x} {dest_ip:08x}",
+           version = self.version(),
            ihl = self.ihl(),
            total_len = self.total_len(),
            ident = self.ident(),
@@ -278,12 +251,15 @@ impl fmt::Display for UdpHeader {
 
 impl fmt::Display for Packet {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        write!(fmt, "{}", self.kernel())?;
-        if self.kernel().is_ipv4() {
-            write!(fmt, "; {}", self.ipv4())?;
+        write!(fmt, "Pkt")?;
+        if self.is_ipv4() {
+            write!(fmt, " {}", self.ipv4())?;
             if self.ipv4().is_udp() {
                 write!(fmt, "; {}", self.udp())?;
             }
+        }
+        if self.is_ipv6() {
+            write!(fmt, " I 6")?;
         }
         Ok(())
     }
