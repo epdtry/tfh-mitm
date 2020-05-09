@@ -68,7 +68,7 @@ fn edit_server_status(p: &mut Packet) -> Result<(), &'static str> {
     }
     require!(i + 3 < b.len());
     println!("offset {}, players: {} / {}", i, b[i + 2], b[i + 3]);
-    b[i + 2] = b[i + 3];
+    b[i + 2] = 0;
 
     // Checksums are optional in UDP/IPv4, so we could set it to zero (unused) instead.  But that
     // has the inexplicable side effect of making player count appear to be zero, regardless of the
