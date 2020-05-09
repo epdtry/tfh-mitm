@@ -36,6 +36,7 @@ pub fn process(input: Receiver<Input>, output: Sender<Output>) {
                     edit_server_status(&mut p)
                         .unwrap_or_else(|e| eprintln!("status: {}", e));
                     println!("status: {}", dump_mixed(p.udp_payload()));
+                    println!("B -> A (edited): {} bytes: {}", p.len(), p);
                 }
 
                 output.send(Output::ToA(p)).unwrap();

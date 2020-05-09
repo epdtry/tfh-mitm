@@ -266,10 +266,11 @@ impl fmt::Display for UdpHeader {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         write!(
            fmt,
-           "U {source_port:04x} {dest_port:04x} {len:04x}",
+           "U {source_port:04x} {dest_port:04x} {len:04x} {checksum:04x}",
            source_port = self.source_port(),
            dest_port = self.dest_port(),
            len = self.len(),
+           checksum = self.checksum(),
        )
     }
 }
