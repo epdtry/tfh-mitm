@@ -16,7 +16,7 @@ fn real_main() -> Result<(), io::Error> {
     let server_ip = Ipv4Addr::from_str(&args[2]).unwrap();
     let server_ip = u32::from_be_bytes(server_ip.octets());
 
-    let (inp_send, out_recv, _) = process::start_processing_thread();
+    let (inp_send, out_recv, proc) = process::start_processing_thread();
 
     thread::spawn(move || {
         for _ in out_recv.iter() {
@@ -24,8 +24,11 @@ fn real_main() -> Result<(), io::Error> {
         }
     });
 
-    loop {
-        let p = pcap.read()?;
+    let err = loop {
+        let p = match pcap.read() {
+            Ok(x) => x,
+            Err(e) => break e,
+        };
         if !p.is_ipv4() {
             continue;
         }
@@ -41,9 +44,11 @@ fn real_main() -> Result<(), io::Error> {
         };
 
         inp_send.send(inp).unwrap();
-    }
+    };
 
-    Ok(())
+    drop(inp_send);
+    proc.join();
+    Err(err)
 }
 
 fn main() {
