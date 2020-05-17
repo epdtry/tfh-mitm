@@ -142,6 +142,23 @@ impl Packet {
         ipv4_start, ipv4_len, ipv4_end
     );
 
+    pub fn compute_ipv4_checksum(&self) -> u16 {
+        let mut acc = 0;
+
+        let header = self.ipv4();
+
+        for i in (0 .. header.len()).step_by(2) {
+            if i == 10 {
+                // The header field itself is treated as zero.
+                continue;
+            }
+
+            acc = ones_complement_add(acc, header.u16_be(i));
+        }
+
+        !acc
+    }
+
 
     pub fn is_ipv6(&self) -> bool {
         Ipv4Header::new(&self).version() == 6
@@ -175,11 +192,6 @@ impl Packet {
     }
 
     pub fn compute_udp_checksum(&self, data: &[u8]) -> u16 {
-        fn ones_complement_add(x: u16, y: u16) -> u16 {
-            let (sum, over) = x.overflowing_add(y);
-            sum + over as u16
-        }
-
         let mut acc = 0;
 
         if self.is_ipv4() {
@@ -229,6 +241,11 @@ impl DerefMut for Packet {
     fn deref_mut(&mut self) -> &mut [u8] { self.as_mut_slice() }
 }
 
+fn ones_complement_add(x: u16, y: u16) -> u16 {
+    let (sum, over) = x.overflowing_add(y);
+    sum + over as u16
+}
+
 
 macro_rules! define_header {
     ($Header:ident) => {
@@ -268,8 +285,12 @@ impl Ipv4Header {
     pub fn flags(&self) -> u8 { self.0.u8_be(6) >> 5 }
     pub fn offset(&self) -> u16 { self.0.u16_be(6) & 0x1fff }
     pub fn protocol(&self) -> u8 { self.0.u8_be(9) }
+    pub fn checksum(&self) -> u16 { self.0.u16_be(10) }
     pub fn source_ip(&self) -> u32 { self.0.u32_be(12) }
     pub fn dest_ip(&self) -> u32 { self.0.u32_be(16) }
+
+    pub fn set_total_len(&mut self, x: u16) { self.0.put_u16_be(2, x) }
+    pub fn set_checksum(&mut self, x: u16) { self.0.put_u16_be(10, x) }
 
     pub fn is_udp(&self) -> bool {
         self.protocol() == 17
@@ -304,6 +325,7 @@ impl UdpHeader {
     pub fn len(&self) -> u16 { self.0.u16_be(4) }
     pub fn checksum(&self) -> u16 { self.0.u16_be(6) }
 
+    pub fn set_len(&mut self, x: u16) { self.0.put_u16_be(4, x) }
     pub fn set_checksum(&mut self, x: u16) { self.0.put_u16_be(6, x) }
 }
 
