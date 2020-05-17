@@ -33,7 +33,7 @@ pub fn process(input: Receiver<Input>, output: Sender<Output>) {
             Input::FromB(mut p) => {
                 //println!("B -> A: {} bytes: {}", p.len(), p);
 
-                if p.is_ipv4() && p.is_udp() && p.udp().source_port() == 27016 {
+                if p.is_udp() && p.udp().source_port() == 27016 {
                     println!("status: {}", dump_mixed(p.udp_payload()));
                     edit_server_status(&mut p)
                         .unwrap_or_else(|e| eprintln!("status: {}", e));
@@ -54,7 +54,7 @@ macro_rules! require {
 }
 
 fn edit_server_status(p: &mut Packet) -> Result<(), &'static str> {
-    require!(p.is_ipv4() && p.is_udp());
+    require!(p.is_udp());
 
 
     // Set current player count to zero
@@ -65,9 +65,7 @@ fn edit_server_status(p: &mut Packet) -> Result<(), &'static str> {
     // count fields are after those.
     let b = p.udp_payload_mut();
     let mut i = 6;
-    let mut strs = [0; 4];
     for j in 0..4 {
-        strs[j] = i;
         while i < b.len() && b[i] != 0 {
             i += 1;
         }
@@ -77,31 +75,6 @@ fn edit_server_status(p: &mut Packet) -> Result<(), &'static str> {
     println!("offset {}, players: {} / {}", i, b[i + 2], b[i + 3]);
     b[i + 2] = 0;
 
-
-    // Change lobby name.  This involves resizing the packet.
-
-    const NEW_MAP: &[u8] = b"velvetlobby";
-
-    let map_start = p.udp_end() + strs[1];
-    let map_end = map_start + p[map_start..].iter().position(|&b| b == 0).unwrap_or(0);
-
-    let mut q = Packet::zeroed(p.len() - (map_end - map_start) + NEW_MAP.len());
-    let new_map_end = map_start + NEW_MAP.len();
-    q[..map_start].copy_from_slice(&p[..map_start]);
-    q[map_start .. new_map_end].copy_from_slice(NEW_MAP);
-    q[new_map_end ..].copy_from_slice(&p[map_end..]);
-    *p = q;
-
-
-    // Fix len and checksum
-
-    let new_total_len = p.len().try_into().unwrap();
-    p.ipv4_mut().set_total_len(new_total_len);
-    let new_udp_len = (p.len() - p.udp_start()).try_into().unwrap();
-    p.udp_mut().set_len(new_udp_len);
-
-    let ipv4_checksum = p.compute_ipv4_checksum();
-    p.ipv4_mut().set_checksum(ipv4_checksum);
 
     // Checksums are optional in UDP/IPv4, so we could set it to zero (unused) instead.  But that
     // has the inexplicable side effect of making player count appear to be zero, regardless of the
