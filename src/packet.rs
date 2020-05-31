@@ -102,6 +102,27 @@ impl Packet {
         self.0.len = len;
     }
 
+    pub fn push(&mut self, b: u8) {
+        unsafe {
+            let len = self.len();
+            assert!(len < PACKET_CAP);
+            *self.0.as_mut_ptr().add(len) = b;
+            self.set_len(len + 1);
+        }
+    }
+
+    pub fn extend<I: IntoIterator<Item = u8>>(&mut self, it: I) {
+        for b in it {
+            self.push(b);
+        }
+    }
+
+    pub fn extend_from_slice(&mut self, bs: &[u8]) {
+        for &b in bs {
+            self.push(b);
+        }
+    }
+
     pub fn truncate(&mut self, len: usize) {
         assert!(len <= self.len());
         unsafe { self.set_len(len) };
