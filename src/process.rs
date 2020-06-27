@@ -26,60 +26,16 @@ pub fn start_processing_thread() -> (Sender<Input>, Receiver<Output>, JoinHandle
 }
 
 pub fn process(input: Receiver<Input>, output: Sender<Output>) {
-    let mut rng = rand::thread_rng();
-    let mut drop_start = Instant::now();
     for inp in input.iter() {
         match inp {
             Input::FromA(p) => {
-                //println!("A -> B: {} bytes: {}", p.len(), p);
-                if p.is_tfh_stream() {
-                    if contains_drop_command(&p) {
-                        let time = drop_start.elapsed().as_secs();
-                        // For the first 30s, the packet and all its copies are dropped.  For the
-                        // next 30s, they are allowed.  Afterward, a drop-command packet resets the
-                        // timer (and is dropped).
-                        if time < 30 {
-                            println!("drop!");
-                            continue;
-                        } else if time < 60 {
-                            // Let it through
-                            println!("pass!");
-                        } else {
-                            drop_start = Instant::now();
-                            println!("drop (initial)!");
-                            continue;
-                        }
-                    }
-                    //println!("A->B: {}, {}, +{} bytes", p.ipv4(), p.tfh_stream(), p.tfh_stream_payload().len());
-                }
                 output.send(Output::ToB(p)).unwrap();
             },
             Input::FromB(mut p) => {
-                //println!("B -> A: {} bytes: {}", p.len(), p);
-
                 if p.is_udp() && p.udp().source_port() == 27016 {
                     edit_server_status(&mut p)
                         .unwrap_or_else(|e| eprintln!("status: {}", e));
-                    //println!("status: {}", dump_mixed(p.udp_payload()));
-                } else if p.is_tfh_stream() {
-                    if contains_drop_command(&p) {
-                        let time = drop_start.elapsed().as_secs();
-                        // For the first 30s, the packet and all its copies are dropped.  For the
-                        // next 30s, they are allowed.  Afterward, a drop-command packet resets the
-                        // timer (and is dropped).
-                        if time < 30 {
-                            println!("drop!");
-                            continue;
-                        } else if time < 60 {
-                            // Let it through
-                            println!("pass!");
-                        } else {
-                            drop_start = Instant::now();
-                            println!("drop (initial)!");
-                            continue;
-                        }
-                    }
-                    println!("B->A: {}, {}, +{} bytes", p.ipv4(), p.tfh_stream(), p.tfh_stream_payload().len());
+                    println!("status: {}", dump_mixed(p.udp_payload()));
                 }
 
                 output.send(Output::ToA(p)).unwrap();
