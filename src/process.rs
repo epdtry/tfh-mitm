@@ -65,9 +65,7 @@ fn edit_server_status(p: &mut Packet) -> Result<(), &'static str> {
     // count fields are after those.
     let b = p.udp_payload_mut();
     let mut i = 6;
-    let mut str_start = [0; 4];
     for j in 0..4 {
-        str_start[j] = i;
         while i < b.len() && b[i] != 0 {
             i += 1;
         }
@@ -77,27 +75,6 @@ fn edit_server_status(p: &mut Packet) -> Result<(), &'static str> {
     println!("offset {}, players: {} / {}", i, b[i + 2], b[i + 3]);
     b[i + 2] = 0;
 
-
-    // Change server name.  This requires resizing the packet.
-    let name_start = p.udp_end() + str_start[0];
-    let name_end = p.udp_end() + str_start[1];
-
-    let mut q = Packet::zeroed(0);
-    q.extend(p[..name_start].iter().cloned());
-    q.extend(b"Leaf (shitter)\0".iter().cloned());
-    q.extend(p[name_end..].iter().cloned());
-    *p = q;
-
-
-    // Fix len and checksum
-
-    let new_total_len = p.len().try_into().unwrap();
-    p.ipv4_mut().set_total_len(new_total_len);
-    let new_udp_len = (p.len() - p.udp_start()).try_into().unwrap();
-    p.udp_mut().set_len(new_udp_len);
-
-    let ipv4_checksum = p.compute_ipv4_checksum();
-    p.ipv4_mut().set_checksum(ipv4_checksum);
 
     // Checksums are optional in UDP/IPv4, so we could set it to zero (unused) instead.  But that
     // has the inexplicable side effect of making player count appear to be zero, regardless of the
