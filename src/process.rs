@@ -24,11 +24,16 @@ pub fn start_processing_thread() -> (Sender<Input>, Receiver<Output>, JoinHandle
 }
 
 pub fn process(input: Receiver<Input>, output: Sender<Output>) {
+    let mut i = 0;
     for inp in input.iter() {
+        i = (i + 1) % 5;
         match inp {
             Input::FromA(p) => {
                 //println!("A -> B: {} bytes: {}", p.len(), p);
                 if p.is_tfh_stream() {
+                    if i % 5 == 0 {
+                        continue;
+                    }
                     println!("A->B: {}, {}, +{} bytes", p.ipv4(), p.tfh_stream(), p.tfh_stream_payload().len());
                 }
                 output.send(Output::ToB(p)).unwrap();
@@ -41,6 +46,9 @@ pub fn process(input: Receiver<Input>, output: Sender<Output>) {
                         .unwrap_or_else(|e| eprintln!("status: {}", e));
                     //println!("status: {}", dump_mixed(p.udp_payload()));
                 } else if p.is_tfh_stream() {
+                    if i % 5 == 0 {
+                        continue;
+                    }
                     println!("B->A: {}, {}, +{} bytes", p.ipv4(), p.tfh_stream(), p.tfh_stream_payload().len());
                 }
 
