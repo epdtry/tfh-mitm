@@ -3,6 +3,7 @@ use std::fmt::Write;
 use std::str;
 use std::sync::mpsc::{self, Sender, Receiver};
 use std::thread::{self, JoinHandle};
+use rand::{self, Rng};
 use crate::packet::Packet;
 
 
@@ -24,14 +25,15 @@ pub fn start_processing_thread() -> (Sender<Input>, Receiver<Output>, JoinHandle
 }
 
 pub fn process(input: Receiver<Input>, output: Sender<Output>) {
-    let mut i = 0;
+    let mut rng = rand::thread_rng();
     for inp in input.iter() {
-        i = (i + 1) % 5;
+        let drop = rng.gen_range(0, 100);
         match inp {
             Input::FromA(p) => {
                 //println!("A -> B: {} bytes: {}", p.len(), p);
                 if p.is_tfh_stream() {
-                    if i % 5 == 0 {
+                    if contains_drop_command(&p) && drop < 35 {
+                        println!("drop!");
                         continue;
                     }
                     println!("A->B: {}, {}, +{} bytes", p.ipv4(), p.tfh_stream(), p.tfh_stream_payload().len());
@@ -46,7 +48,8 @@ pub fn process(input: Receiver<Input>, output: Sender<Output>) {
                         .unwrap_or_else(|e| eprintln!("status: {}", e));
                     //println!("status: {}", dump_mixed(p.udp_payload()));
                 } else if p.is_tfh_stream() {
-                    if i % 5 == 0 {
+                    if contains_drop_command(&p) && drop < 35 {
+                        println!("drop!");
                         continue;
                     }
                     println!("B->A: {}, {}, +{} bytes", p.ipv4(), p.tfh_stream(), p.tfh_stream_payload().len());
@@ -92,6 +95,19 @@ fn edit_server_status(p: &mut Packet) -> Result<(), &'static str> {
     let udp_checksum = p.compute_udp_checksum(p.udp_payload());
     p.udp_mut().set_checksum(udp_checksum);
     Ok(())
+}
+
+fn contains_drop_command(p: &Packet) -> bool {
+    if !p.is_tfh_stream() {
+        return false;
+    }
+    let payload = p.tfh_stream_payload();
+    for i in 0 .. payload.len() {
+        if payload[i..].starts_with(b"dropthis") {
+            return true;
+        }
+    }
+    false
 }
 
 fn dump_hex(b: &[u8]) -> String {
