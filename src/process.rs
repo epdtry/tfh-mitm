@@ -28,17 +28,20 @@ pub fn process(input: Receiver<Input>, output: Sender<Output>) {
         match inp {
             Input::FromA(p) => {
                 //println!("A -> B: {} bytes: {}", p.len(), p);
+                if p.is_tfh_stream() {
+                    println!("A->B: {}, {}, +{} bytes", p.ipv4(), p.tfh_stream(), p.tfh_stream_payload().len());
+                }
                 output.send(Output::ToB(p)).unwrap();
             },
             Input::FromB(mut p) => {
                 //println!("B -> A: {} bytes: {}", p.len(), p);
 
                 if p.is_udp() && p.udp().source_port() == 27016 {
-                    println!("status: {}", dump_mixed(p.udp_payload()));
                     edit_server_status(&mut p)
                         .unwrap_or_else(|e| eprintln!("status: {}", e));
-                    println!("edited: {}", dump_mixed(p.udp_payload()));
-                    println!("B -> A (edited): {} bytes: {}", p.len(), p);
+                    //println!("status: {}", dump_mixed(p.udp_payload()));
+                } else if p.is_tfh_stream() {
+                    println!("B->A: {}, {}, +{} bytes", p.ipv4(), p.tfh_stream(), p.tfh_stream_payload().len());
                 }
 
                 output.send(Output::ToA(p)).unwrap();
@@ -72,7 +75,6 @@ fn edit_server_status(p: &mut Packet) -> Result<(), &'static str> {
         i += 1;
     }
     require!(i + 3 < b.len());
-    println!("offset {}, players: {} / {}", i, b[i + 2], b[i + 3]);
     b[i + 2] = 0;
 
 

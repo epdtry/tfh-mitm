@@ -230,6 +230,33 @@ impl Packet {
             !acc
         }
     }
+
+
+    pub fn tfh_stream_start(&self) -> usize {
+        if self.is_udp() {
+            self.udp_end()
+        } else {
+            panic!("don't know how to find TFH stream header in non-UDP packet")
+        }
+    }
+
+    pub fn tfh_stream_len(&self) -> usize {
+        25
+    }
+
+    define_header_accessors!(
+        TfhStreamHeader,
+        tfh_stream, tfh_stream_mut, tfh_stream_payload, tfh_stream_payload_mut,
+        tfh_stream_start, tfh_stream_len, tfh_stream_end
+    );
+
+    pub fn is_tfh_stream(&self) -> bool {
+        if !self.is_udp() {
+            return false;
+        }
+        let p = self.udp_payload();
+        p.len() >= 25 && p.u8_be(0) == 1 && p.u32_be(1) == 0
+    }
 }
 
 impl Deref for Packet {
@@ -270,6 +297,13 @@ macro_rules! define_header {
 
         impl DerefMut for $Header {
             fn deref_mut(&mut self) -> &mut [u8] { &mut self.0 }
+        }
+
+        impl From<&'_ $Header> for Box<$Header> {
+            fn from(x: &$Header) -> Box<$Header> {
+                let b = <Box<[u8]>>::from(x as &[u8]);
+                unsafe { mem::transmute(b) }
+            }
         }
     };
 }
@@ -338,6 +372,43 @@ impl fmt::Display for UdpHeader {
            dest_port = self.dest_port(),
            len = self.len(),
            checksum = self.checksum(),
+       )
+    }
+}
+
+
+define_header!(TfhStreamHeader);
+
+impl TfhStreamHeader {
+    /// Unknown - always 0x01
+    pub fn unknown1(&self) -> u8 { self.0.u8_be(0) }
+    /// Unknown - always 0x00000000
+    pub fn unknown2(&self) -> u32 { self.0.u32_be(1) }
+    /// Number of bytes the sender has previously sent.  Does not include the current message.
+    pub fn my_seq(&self) -> u32 { self.0.u32_be(5) }
+    /// Number of bytes the sender has received from its peer.
+    pub fn your_seq(&self) -> u32 { self.0.u32_be(9) }
+    /// 0x0002 for the first message in each direction, 0x0000 otherwise.
+    pub fn flags(&self) -> u16 { self.0.u16_be(13) }
+    /// Unknown.  Changes unpredictably, but stays within the range 0xea00-0xf000.
+    pub fn unknown3(&self) -> u16 { self.0.u16_be(15) }
+    /// Local timestamp on the sender's machine.
+    pub fn my_time(&self) -> u32 { self.0.u32_be(17) }
+    /// Last timestamp that the sender received from its peer.  On initial connection, this is
+    /// zero.
+    pub fn your_time(&self) -> u32 { self.0.u32_be(21) }
+}
+
+impl fmt::Display for TfhStreamHeader {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+           fmt,
+           "T {my_seq} {your_seq} {my_time} {your_time} 0x{unknown3:08x}",
+           my_seq = self.my_seq(),
+           your_seq = self.your_seq(),
+           my_time = self.my_time(),
+           your_time = self.your_time(),
+           unknown3 = self.unknown3(),
        )
     }
 }
