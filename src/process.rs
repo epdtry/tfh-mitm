@@ -32,7 +32,8 @@ pub fn process(input: Receiver<Input>, output: Sender<Output>) {
                 output.send(Output::ToB(p)).unwrap();
             },
             Input::FromB(mut p) => {
-                if p.is_udp() && p.udp().source_port() == 27016 {
+                let port = p.udp().source_port();
+                if p.is_udp() && port >= 27010 && port <= 27030 {
                     edit_server_status(&mut p)
                         .unwrap_or_else(|e| eprintln!("status: {}", e));
                     println!("status: {}", dump_mixed(p.udp_payload()));
