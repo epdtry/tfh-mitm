@@ -75,12 +75,24 @@ fn get_tun_from_server<P: AsRef<Path>>(path: P) -> Result<RawFd, Error> {
     return Err("didn't receive a file descriptor".into());
 }
 
-fn real_main() -> Result<(), Error> {
-    let fd_a = tuntap::open_tun("tun-tfh-outside")?;
-    //let fd_b = tuntap::open_tun("tun-tfh-inside")?;
-    let fd_b = get_tun_from_server("tun")?;
+fn open_or_get_tun(name: &str) -> Result<RawFd, Error> {
+    if Path::new(name).exists() {
+        eprintln!("receiving tun fd from socket {:?}", name);
+        get_tun_from_server(name)
+    } else {
+        eprintln!("creating tun device {:?}", name);
+        tuntap::open_tun(name)
+    }
+}
 
-    println!("opened tun devices {}, {}", fd_a, fd_b);
+fn real_main() -> Result<(), Error> {
+    let args = std::env::args().collect::<Vec<_>>();
+    assert!(args.len() == 3, "usage: {} outside inside", args[0]);
+
+    let fd_a = open_or_get_tun(&args[1])?;
+    let fd_b = open_or_get_tun(&args[2])?;
+
+    println!("got tun devices {}, {}", fd_a, fd_b);
 
     let (inp_send, out_recv, _) = process::start_processing_thread();
     let inp_send_a = inp_send.clone();
