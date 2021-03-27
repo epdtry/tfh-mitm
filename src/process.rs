@@ -1,9 +1,9 @@
 use std::cmp;
-use std::collections::HashMap;
+use std::collections::hash_map::{HashMap, Entry};
 use std::convert::TryInto;
 use std::fmt::Write as _;
 use std::fs::{self, File};
-use std::io::Write as _;
+use std::io::{self, Write as _};
 use std::str;
 use std::sync::mpsc::{self, Sender, Receiver};
 use std::thread::{self, JoinHandle};
@@ -36,22 +36,37 @@ struct StreamHandlerImpl {
     logs: HashMap<ConnTuple, File>,
 }
 
+impl StreamHandlerImpl {
+    fn try_log_message(&mut self, ct: ConnTuple, msg: Message) -> io::Result<()> {
+        let log = match self.logs.entry(ct) {
+            Entry::Occupied(e) => e.into_mut(),
+            Entry::Vacant(e) => {
+                let (client_ip, client_port, server_port) = match ct {
+                    ConnTuple::Ipv4(ci, cp, si, sp) => (ci, cp, sp),
+                };
+                let mut client_ip_bytes = [0; 4];
+                client_ip_bytes.put_u32_be(0, client_ip);
+                let [a, b, c, d] = client_ip_bytes;
+                let name = format!("logs/{}-{}.{}.{}.{}-{}-{}.tfhlog",
+                    now(), a, b, c, d, client_port, server_port);
+                e.insert(File::create(name)?)
+            },
+        };
+
+        log.write_all(&msg.header.as_bytes())?;
+        log.write_all(&msg.body)?;
+        Ok(())
+    }
+}
+
 impl StreamHandler for StreamHandlerImpl {
     fn on_message(&mut self, ct: ConnTuple, msg: Message) {
-        let log = self.logs.entry(ct).or_insert_with(|| {
-            let (client_ip, client_port, server_port) = match ct {
-                ConnTuple::Ipv4(ci, cp, si, sp) => (ci, cp, sp),
-            };
-            let mut client_ip_bytes = [0; 4];
-            client_ip_bytes.put_u32_be(0, client_ip);
-            let [a, b, c, d] = client_ip_bytes;
-            let name = format!("logs/{}-{}.{}.{}.{}-{}-{}.tfhlog",
-                now(), a, b, c, d, client_port, server_port);
-            File::create(name).unwrap()
-        });
-
-        log.write_all(&msg.header.as_bytes()).unwrap();
-        log.write_all(&msg.body).unwrap();
+        match self.try_log_message(ct, msg) {
+            Ok(()) => {},
+            Err(e) => {
+                eprintln!("error: failed to log message for {:?}: {}", ct, e);
+            },
+        }
     }
 
     fn on_timeout(&mut self, ct: ConnTuple) {
