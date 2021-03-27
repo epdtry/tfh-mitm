@@ -1,13 +1,17 @@
 use std::cmp;
+use std::collections::HashMap;
 use std::convert::TryInto;
-use std::fmt::Write;
+use std::fmt::Write as _;
+use std::fs::{self, File};
+use std::io::Write as _;
 use std::str;
 use std::sync::mpsc::{self, Sender, Receiver};
 use std::thread::{self, JoinHandle};
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use rand::{self, Rng};
+use crate::bytes::Bytes;
 use crate::packet::Packet;
-use crate::tfh_stream::TfhStreamConns;
+use crate::tfh_stream::{TfhStreamConns, ConnTuple, StreamHandler, Message};
 
 
 pub enum Input {
@@ -27,33 +31,47 @@ pub fn start_processing_thread() -> (Sender<Input>, Receiver<Output>, JoinHandle
     (inp_send, out_recv, join)
 }
 
+#[derive(Default)]
+struct StreamHandlerImpl {
+    logs: HashMap<ConnTuple, File>,
+}
+
+impl StreamHandler for StreamHandlerImpl {
+    fn on_message(&mut self, ct: ConnTuple, msg: Message) {
+        let log = self.logs.entry(ct).or_insert_with(|| {
+            let (client_ip, client_port, server_port) = match ct {
+                ConnTuple::Ipv4(ci, cp, si, sp) => (ci, cp, sp),
+            };
+            let mut client_ip_bytes = [0; 4];
+            client_ip_bytes.put_u32_be(0, client_ip);
+            let [a, b, c, d] = client_ip_bytes;
+            let name = format!("logs/{}-{}.{}.{}.{}-{}-{}.tfhlog",
+                now(), a, b, c, d, client_port, server_port);
+            File::create(name).unwrap()
+        });
+
+        log.write_all(&msg.header.as_bytes()).unwrap();
+        log.write_all(&msg.body).unwrap();
+    }
+
+    fn on_timeout(&mut self, ct: ConnTuple) {
+        self.logs.remove(&ct);
+    }
+}
+
 pub fn process(input: Receiver<Input>, output: Sender<Output>) {
-    let mut stream_conns = TfhStreamConns::new(|ct, msg| {
-        eprintln!("{:?}: {} {:x}.{:x}, len {} = {}",
-                  ct, msg.header.dir, msg.header.major, msg.header.minor,
-                  msg.body.len(),
-                  dump_mixed(&msg.body));
-    });
+    fs::create_dir_all("logs").unwrap();
+
+    let mut stream_conns = TfhStreamConns::new(StreamHandlerImpl::default());
 
     for inp in input.iter() {
         match inp {
             Input::FromA(p) => {
-                if p.is_tfh_stream() {
-                    let tfh = p.tfh_stream();
-                    eprintln!("A**B: {}, len = {}", tfh, p.tfh_stream_payload().len());
-                }
-
                 stream_conns.handle(&p, false);
-
                 output.send(Output::ToB(p)).unwrap();
             },
 
             Input::FromB(mut p) => {
-                if p.is_tfh_stream() {
-                    let tfh = p.tfh_stream();
-                    eprintln!("B**A: {}, len = {}", tfh, p.tfh_stream_payload().len());
-                }
-
                 stream_conns.handle(&p, true);
 
                 if p.is_udp() {
@@ -69,6 +87,8 @@ pub fn process(input: Receiver<Input>, output: Sender<Output>) {
             },
         }
     }
+
+    stream_conns.check_timeout();
 }
 
 macro_rules! require {
@@ -167,4 +187,12 @@ fn dump_mixed(b: &[u8]) -> String {
 
 fn is_printable_ascii(x: u8) -> bool {
     x >= 0x20 && x < 0x7f
+}
+
+
+fn now() -> i64 {
+    match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(dur) => dur.as_secs() as i64,
+        Err(e) => -(e.duration().as_secs() as i64),
+    }
 }

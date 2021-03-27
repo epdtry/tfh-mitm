@@ -235,6 +235,18 @@ pub struct Message {
     pub body: Box<[u8]>,
 }
 
+impl MessageHeader {
+    pub fn as_bytes(&self) -> [u8; 12] {
+        let mut buf = [0; 12];
+        buf.put_u8_be(0, self.major);
+        buf.put_u8_be(1, self.minor);
+        buf.put_u8_be(2, self.dir);
+        buf.put_u32_be(4, self.ack);
+        buf.put_u32_be(8, self.len);
+        buf
+    }
+}
+
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum ConnTuple {
@@ -264,13 +276,20 @@ impl ConnTuple {
     }
 }
 
-pub struct TfhStreamConns<F> {
-    map: HashMap<ConnTuple, StreamConn>,
-    handler: F,
+pub trait StreamHandler {
+    fn on_message(&mut self, ct: ConnTuple, msg: Message) {}
+    fn on_timeout(&mut self, ct: ConnTuple) {}
 }
 
-impl<F: FnMut(ConnTuple, Message)> TfhStreamConns<F> {
-    pub fn new(handler: F) -> TfhStreamConns<F> {
+pub struct TfhStreamConns<H> {
+    map: HashMap<ConnTuple, StreamConn>,
+    handler: H,
+}
+
+const CONN_TIMEOUT: u64 = 60;
+
+impl<H: StreamHandler> TfhStreamConns<H> {
+    pub fn new(handler: H) -> TfhStreamConns<H> {
         TfhStreamConns {
             map: HashMap::new(),
             handler,
@@ -291,11 +310,25 @@ impl<F: FnMut(ConnTuple, Message)> TfhStreamConns<F> {
 
         while let Some(mut msg) = sc.ab.next_message() {
             msg.header.dir = 0;
-            (self.handler)(ct, msg);
+            self.handler.on_message(ct, msg);
         }
         while let Some(mut msg) = sc.ba.next_message() {
             msg.header.dir = 1;
-            (self.handler)(ct, msg);
+            self.handler.on_message(ct, msg);
+        }
+    }
+
+    pub fn check_timeout(&mut self) {
+        let mut remove = Vec::new();
+        for (k, v) in &mut self.map {
+            if v.last_packet.elapsed().as_secs() >= CONN_TIMEOUT {
+                self.handler.on_timeout(*k);
+                remove.push(*k);
+            }
+        }
+
+        for k in remove {
+            self.map.remove(&k);
         }
     }
 }
