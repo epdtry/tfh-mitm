@@ -1,3 +1,4 @@
+use std::cmp;
 use std::convert::TryInto;
 use std::fmt::Write;
 use std::str;
@@ -6,6 +7,7 @@ use std::thread::{self, JoinHandle};
 use std::time::Instant;
 use rand::{self, Rng};
 use crate::packet::Packet;
+use crate::tfh_stream::TfhStreamConns;
 
 
 pub enum Input {
@@ -26,12 +28,34 @@ pub fn start_processing_thread() -> (Sender<Input>, Receiver<Output>, JoinHandle
 }
 
 pub fn process(input: Receiver<Input>, output: Sender<Output>) {
+    let mut stream_conns = TfhStreamConns::new(|ct, msg| {
+        eprintln!("{:?}: {} {:x}.{:x}, len {} = {}",
+                  ct, msg.header.dir, msg.header.major, msg.header.minor,
+                  msg.body.len(),
+                  dump_mixed(&msg.body));
+    });
+
     for inp in input.iter() {
         match inp {
             Input::FromA(p) => {
+                if p.is_tfh_stream() {
+                    let tfh = p.tfh_stream();
+                    eprintln!("A**B: {}, len = {}", tfh, p.tfh_stream_payload().len());
+                }
+
+                stream_conns.handle(&p, false);
+
                 output.send(Output::ToB(p)).unwrap();
             },
+
             Input::FromB(mut p) => {
+                if p.is_tfh_stream() {
+                    let tfh = p.tfh_stream();
+                    eprintln!("B**A: {}, len = {}", tfh, p.tfh_stream_payload().len());
+                }
+
+                stream_conns.handle(&p, true);
+
                 if p.is_udp() {
                     let port = p.udp().source_port();
                     if port >= 27010 && port <= 27030 {
@@ -78,8 +102,7 @@ fn edit_server_status(p: &mut Packet) -> Result<(), &'static str> {
     // Checksums are optional in UDP/IPv4, so we could set it to zero (unused) instead.  But that
     // has the inexplicable side effect of making player count appear to be zero, regardless of the
     // value in the packet, and might cause other weird effects too.
-    let udp_checksum = p.compute_udp_checksum(p.udp_payload());
-    p.udp_mut().set_checksum(udp_checksum);
+    p.update_udp_checksum();
     Ok(())
 }
 

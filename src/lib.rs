@@ -1,3 +1,4 @@
+#![feature(map_first_last)]
 #![feature(untagged_unions)]
 use std::fmt;
 use std::io;
@@ -8,6 +9,7 @@ mod bytes;
 pub mod packet;
 pub mod pcap;
 pub mod process;
+pub mod tfh_stream;
 pub mod tuntap;
 
 

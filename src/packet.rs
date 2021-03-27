@@ -15,6 +15,19 @@ struct PacketInner {
     len: usize,
 }
 
+impl Clone for PacketInner {
+    fn clone(&self) -> PacketInner {
+        unsafe {
+            let mut pi = PacketInner::default();
+            for (i, &b) in self.as_slice().iter().enumerate() {
+                *pi.as_mut_ptr().add(i) = b;
+            }
+            pi.len = self.len;
+            pi
+        }
+    }
+}
+
 impl Default for PacketInner {
     fn default() -> PacketInner {
         PacketInner {
@@ -46,7 +59,7 @@ impl PacketInner {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Packet(Box<PacketInner>);
 
 macro_rules! define_header_accessors {
@@ -231,6 +244,11 @@ impl Packet {
         }
     }
 
+    pub fn update_udp_checksum(&mut self) {
+        let checksum = self.compute_udp_checksum(self.udp_payload());
+        self.udp_mut().set_checksum(checksum);
+    }
+
 
     pub fn tfh_stream_start(&self) -> usize {
         if self.is_udp() {
@@ -397,7 +415,12 @@ impl TfhStreamHeader {
     /// Last timestamp that the sender received from its peer.  On initial connection, this is
     /// zero.
     pub fn your_time(&self) -> u32 { self.0.u32_be(21) }
+
+    pub fn set_my_seq(&mut self, x: u32) { self.0.put_u32_be(5, x) }
+    pub fn set_your_seq(&mut self, x: u32) { self.0.put_u32_be(9, x) }
 }
+
+pub const TFH_STREAM_HEADER_LEN: usize = 25;
 
 impl fmt::Display for TfhStreamHeader {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
