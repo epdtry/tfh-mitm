@@ -91,7 +91,8 @@ impl StreamHandler for StreamHandlerImpl {
     fn on_message(&mut self, ct: ConnTuple, msg: Message) {
         if msg.header.dir == 0 && msg.header.major == 0x0a {
             if let Some(name_bytes) = msg.body.get(12 .. 12 + 64) {
-                let name = String::from_utf8_lossy(name_bytes).into_owned();
+                let len = name_bytes.iter().position(|&b| b == 0).unwrap_or(name_bytes.len());
+                let name = String::from_utf8_lossy(&name_bytes[..len]).into_owned();
                 eprintln!("{:?}: logged in as {}", ct, name);
                 self.names.insert(ct, name);
                 self.update_status();
