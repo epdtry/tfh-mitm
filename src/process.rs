@@ -34,6 +34,7 @@ pub fn start_processing_thread() -> (Sender<Input>, Receiver<Output>, JoinHandle
 #[derive(Default)]
 struct StreamHandlerImpl {
     logs: HashMap<ConnTuple, File>,
+    names: HashMap<ConnTuple, String>,
 }
 
 impl StreamHandlerImpl {
@@ -57,10 +58,46 @@ impl StreamHandlerImpl {
         log.write_all(&msg.body)?;
         Ok(())
     }
+
+    fn try_update_status(&mut self) -> io::Result<()> {
+        let mut f = File::create("status.txt")?;
+        if self.names.len() == 0 {
+            writeln!(f, "0 players connected")?;
+            return Ok(());
+        }
+        writeln!(f, "{} player{} connected:",
+            self.names.len(),
+            if self.names.len() != 1 { "s" } else { "" },
+        )?;
+        let mut names = self.names.values().collect::<Vec<_>>();
+        names.sort();
+        for name in names {
+            writeln!(f, "- {}", name)?;
+        }
+        Ok(())
+    }
+
+    fn update_status(&mut self) {
+        match self.try_update_status() {
+            Ok(()) => {},
+            Err(e) => {
+                eprintln!("error: failed to update status.txt: {}", e);
+            },
+        }
+    }
 }
 
 impl StreamHandler for StreamHandlerImpl {
     fn on_message(&mut self, ct: ConnTuple, msg: Message) {
+        if msg.header.dir == 0 && msg.header.major == 0x0a {
+            if let Some(name_bytes) = msg.body.get(12 .. 12 + 64) {
+                let name = String::from_utf8_lossy(name_bytes).into_owned();
+                eprintln!("{:?}: logged in as {}", ct, name);
+                self.names.insert(ct, name);
+                self.update_status();
+            }
+        }
+
         match self.try_log_message(ct, msg) {
             Ok(()) => {},
             Err(e) => {
@@ -70,7 +107,11 @@ impl StreamHandler for StreamHandlerImpl {
     }
 
     fn on_timeout(&mut self, ct: ConnTuple) {
+        eprintln!("{:?}: timed out", ct);
         self.logs.remove(&ct);
+        if self.names.remove(&ct).is_some() {
+            self.update_status();
+        }
     }
 }
 
