@@ -321,7 +321,7 @@ impl<H: StreamHandler> TfhStreamConns<H> {
     pub fn check_timeout(&mut self) {
         let mut remove = Vec::new();
         for (k, v) in &mut self.map {
-            if v.last_packet.elapsed().as_secs() >= CONN_TIMEOUT {
+            if v.last_packet.elapsed().as_secs() as u64 >= CONN_TIMEOUT {
                 self.handler.on_timeout(*k);
                 remove.push(*k);
             }

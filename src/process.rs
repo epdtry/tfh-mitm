@@ -121,6 +121,8 @@ pub fn process(input: Receiver<Input>, output: Sender<Output>) {
 
     let mut stream_conns = TfhStreamConns::new(StreamHandlerImpl::default());
 
+
+    let mut last_timeout_check = Instant::now();
     for inp in input.iter() {
         match inp {
             Input::FromA(p) => {
@@ -143,9 +145,13 @@ pub fn process(input: Receiver<Input>, output: Sender<Output>) {
                 output.send(Output::ToA(p)).unwrap();
             },
         }
-    }
 
-    stream_conns.check_timeout();
+        let now = Instant::now();
+        if now.duration_since(last_timeout_check).as_secs() >= 5 {
+            stream_conns.check_timeout();
+            last_timeout_check = now;
+        }
+    }
 }
 
 macro_rules! require {
