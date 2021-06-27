@@ -185,7 +185,7 @@ impl TfhStream {
 
         // Extract the message body.
         let header_len = 10 + if major == 0x20 { 4 } else { 0 };
-        let body_len = 4 + len - header_len;
+        let body_len = (4 + len).saturating_sub(header_len);
         let mut body = vec![0; body_len];
         copy_vec_deque_into_slice(&mut body, &self.buf, header_len);
 

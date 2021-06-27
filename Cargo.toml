@@ -8,3 +8,6 @@ edition = "2018"
 nix = "0.15"
 libc = "0.2.69"
 rand = "0.7"
+
+[profile.release]
+debug = true
